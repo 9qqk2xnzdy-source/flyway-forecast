@@ -1,0 +1,744 @@
+# ============================================================================
+# ENHANCED WEATHER INTEGRATION FOR HUNTING PREDICTIONS
+# Add this code to your app.py file
+# ============================================================================
+
+# ----------------------------
+# STEP 1: Add these imports at the top of your file (if not already present)
+# ----------------------------
+
+import requests
+from datetime import datetime, timedelta
+import numpy as np
+
+# ----------------------------
+# STEP 2: Enhanced Weather Fetching Function
+# Replace or update your existing fetch_weather_for_date function with this enhanced version
+# ----------------------------
+
+@st.cache_data(ttl=24*3600)
+def fetch_comprehensive_weather(lat, lon, date):
+    """
+    Fetch comprehensive weather data including:
+    - Temperature (max, min, average)
+    - Wind (speed, direction)
+    - Sunrise/Sunset times
+    - Precipitation
+    - Weather conditions
+    
+    Returns dict with all weather metrics or None on error.
+    """
+    try:
+        if pd.isna(lat) or pd.isna(lon):
+            return None
+            
+        date = pd.to_datetime(date)
+        date_str = date.strftime('%Y-%m-%d')
+        today = pd.Timestamp.today().normalize()
+        
+        # Parameters for comprehensive weather data
+        params = (
+            "daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,"
+            "precipitation_sum,windspeed_10m_max,winddirection_10m_dominant,"
+            "sunrise,sunset,weathercode&"
+            "temperature_unit=fahrenheit&windspeed_unit=mph&"
+            "precipitation_unit=inch&timezone=America/Los_Angeles"
+        )
+        
+        # Use forecast endpoint for today/future, archive for past
+        if date >= today:
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&{params}"
+        else:
+            url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&{params}"
+        
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        daily = data.get('daily', {})
+        times = daily.get('time', [])
+        
+        if not times:
+            return None
+        
+        # Extract all weather data
+        weather_data = {
+            'date': pd.to_datetime(times[0]),
+            'temp_max': daily.get('temperature_2m_max', [None])[0],
+            'temp_min': daily.get('temperature_2m_min', [None])[0],
+            'temp_mean': daily.get('temperature_2m_mean', [None])[0],
+            'precipitation': daily.get('precipitation_sum', [None])[0],
+            'windspeed': daily.get('windspeed_10m_max', [None])[0],
+            'wind_direction': daily.get('winddirection_10m_dominant', [None])[0],
+            'sunrise': daily.get('sunrise', [None])[0],
+            'sunset': daily.get('sunset', [None])[0],
+            'weathercode': daily.get('weathercode', [None])[0]
+        }
+        
+        # Calculate average temp if mean not available
+        if weather_data['temp_mean'] is None and weather_data['temp_max'] is not None and weather_data['temp_min'] is not None:
+            weather_data['temp_mean'] = (weather_data['temp_max'] + weather_data['temp_min']) / 2
+        
+        # Convert wind direction to cardinal direction
+        weather_data['wind_direction_cardinal'] = degrees_to_cardinal(weather_data['wind_direction'])
+        
+        # Parse sunrise/sunset times
+        if weather_data['sunrise']:
+            weather_data['sunrise_time'] = pd.to_datetime(weather_data['sunrise']).strftime('%I:%M %p')
+        else:
+            weather_data['sunrise_time'] = 'N/A'
+            
+        if weather_data['sunset']:
+            weather_data['sunset_time'] = pd.to_datetime(weather_data['sunset']).strftime('%I:%M %p')
+        else:
+            weather_data['sunset_time'] = 'N/A'
+        
+        return weather_data
+        
+    except Exception as e:
+        print(f"Error fetching weather: {e}")
+        return None
+
+# ----------------------------
+# STEP 3: Helper Functions
+# ----------------------------
+
+def degrees_to_cardinal(degrees):
+    """Convert wind direction in degrees to cardinal direction (N, NE, E, etc.)"""
+    if degrees is None or pd.isna(degrees):
+        return 'Variable'
+    
+    directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 
+                  'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+    index = int((degrees + 11.25) / 22.5) % 16
+    return directions[index]
+
+def calculate_weather_score(weather_data):
+    """
+    Calculate a weather favorability score (0-100) for duck hunting based on:
+    - Temperature (ideal: 30-50°F)
+    - Wind (ideal: 5-15 mph, favorable directions: N, NE, NW)
+    - Precipitation (light is ok, heavy is bad)
+    
+    Returns: float score 0-100
+    """
+    if not weather_data:
+        return 50.0  # Neutral score if no data
+    
+    score = 0
+    factors = 0
+    
+    # Temperature scoring (0-35 points)
+    temp_avg = weather_data.get('temp_mean')
+    if temp_avg is not None:
+        if 30 <= temp_avg <= 50:
+            score += 35  # Ideal range
+        elif 20 <= temp_avg < 30 or 50 < temp_avg <= 60:
+            score += 25  # Good range
+        elif 10 <= temp_avg < 20 or 60 < temp_avg <= 70:
+            score += 15  # Acceptable
+        else:
+            score += 5   # Poor
+        factors += 1
+    
+    # Wind scoring (0-35 points)
+    windspeed = weather_data.get('windspeed')
+    wind_dir = weather_data.get('wind_direction_cardinal', '')
+    
+    if windspeed is not None:
+        # Wind speed scoring
+        if 5 <= windspeed <= 15:
+            wind_score = 25  # Ideal
+        elif windspeed < 5:
+            wind_score = 15  # Too calm
+        elif 15 < windspeed <= 25:
+            wind_score = 20  # Acceptable
+        else:
+            wind_score = 5   # Too windy
+        
+        # Wind direction bonus (favorable for migration)
+        if any(d in wind_dir for d in ['N', 'NE', 'NW']):
+            wind_score += 10
+        
+        score += wind_score
+        factors += 1
+    
+    # Precipitation scoring (0-30 points)
+    precip = weather_data.get('precipitation')
+    if precip is not None:
+        if precip == 0:
+            score += 25  # Dry
+        elif precip <= 0.1:
+            score += 30  # Light drizzle can be good
+        elif precip <= 0.3:
+            score += 15  # Moderate
+        else:
+            score += 5   # Heavy rain
+        factors += 1
+    
+    # Calculate final score
+    if factors == 0:
+        return 50.0
+    
+    # Normalize to 0-100 scale
+    max_possible = 35 + 35 + 30  # temp + wind + precip
+    final_score = (score / max_possible) * 100
+    
+    return round(final_score, 1)
+
+def get_historical_weather_comparison(lat, lon, date, years_back=5):
+    """
+    Fetch weather for the same date over the past N years.
+    Returns list of weather data dictionaries.
+    """
+    date = pd.to_datetime(date)
+    historical_weather = []
+    
+    for year_offset in range(1, years_back + 1):
+        try:
+            # Go back N years
+            past_date = date.replace(year=date.year - year_offset)
+        except ValueError:
+            # Handle Feb 29 edge case
+            past_date = date.replace(year=date.year - year_offset, day=28)
+        
+        weather = fetch_comprehensive_weather(lat, lon, past_date)
+        if weather:
+            weather['year'] = past_date.year
+            historical_weather.append(weather)
+    
+    return historical_weather
+
+def calculate_historical_weather_averages(historical_weather):
+    """Calculate averages from historical weather data."""
+    if not historical_weather:
+        return None
+    
+    temps_max = [w['temp_max'] for w in historical_weather if w.get('temp_max') is not None]
+    temps_min = [w['temp_min'] for w in historical_weather if w.get('temp_min') is not None]
+    temps_mean = [w['temp_mean'] for w in historical_weather if w.get('temp_mean') is not None]
+    winds = [w['windspeed'] for w in historical_weather if w.get('windspeed') is not None]
+    precips = [w['precipitation'] for w in historical_weather if w.get('precipitation') is not None]
+    
+    return {
+        'avg_temp_max': round(np.mean(temps_max), 1) if temps_max else None,
+        'avg_temp_min': round(np.mean(temps_min), 1) if temps_min else None,
+        'avg_temp_mean': round(np.mean(temps_mean), 1) if temps_mean else None,
+        'avg_windspeed': round(np.mean(winds), 1) if winds else None,
+        'avg_precipitation': round(np.mean(precips), 2) if precips else None,
+    }
+
+# ----------------------------
+# STEP 4: Enhanced Prediction Function
+# Replace your existing predict_activity function with this enhanced version
+# ----------------------------
+
+def predict_activity_with_weather(date, location, historical_df, master_data_df, coordinates_df):
+    """
+    Enhanced prediction that incorporates weather data into hunting activity forecast.
+    
+    Returns:
+        dict: Contains prediction data including weather analysis
+    """
+    season_week = calculate_season_week(date)
+    
+    # Get historical baseline
+    hist_row = historical_df[
+        (historical_df['Area Name'].str.upper() == location.upper()) & 
+        (historical_df['Season_Week'] == season_week)
+    ]
+    
+    if hist_row.empty:
+        return {
+            'error': f"No historical data for {location} in Season Week {season_week}"
+        }
+    
+    hist_avg = hist_row['15yr_Avg_Ducks'].iloc[0]
+    top_species = hist_row['Top_Species'].iloc[0]
+
+    # Get current year data from master aggregated data
+    loc_week_df = master_data_df[
+        (master_data_df['Area Name'].str.upper() == location.upper()) &
+        (master_data_df['Season_Week'] == season_week)
+    ]
+    
+    current_avg = loc_week_df['Average Ducks'].mean() if not loc_week_df.empty else 0.0
+    
+    # Get coordinates for weather data
+    coords_row = coordinates_df[coordinates_df['Area Name'].str.upper() == location.upper()]
+    
+    weather_data = None
+    weather_score = 50.0  # Default neutral score
+    historical_weather = []
+    historical_weather_avg = None
+    
+    if not coords_row.empty:
+        lat = coords_row.iloc[0]['Latitude']
+        lon = coords_row.iloc[0]['Longitude']
+        
+        # Fetch current/forecast weather
+        weather_data = fetch_comprehensive_weather(lat, lon, date)
+        
+        # Calculate weather score
+        weather_score = calculate_weather_score(weather_data)
+        
+        # Get historical weather for comparison (past 5 years)
+        historical_weather = get_historical_weather_comparison(lat, lon, date, years_back=5)
+        historical_weather_avg = calculate_historical_weather_averages(historical_weather)
+    
+    # Calculate base activity from harvest data
+    if current_avg > hist_avg:
+        base_activity = 'High'
+        harvest_score = 70  # Base score for high activity
+    else:
+        base_activity = 'Moderate'
+        harvest_score = 50  # Base score for moderate/low activity
+    
+    # Combine harvest data and weather score (60% harvest, 40% weather)
+    combined_score = (harvest_score * 0.6) + (weather_score * 0.4)
+    
+    # Determine final activity level based on combined score
+    if combined_score >= 65:
+        final_activity = 'High'
+        activity_color = 'success'
+        activity_emoji = '🟢'
+    elif combined_score >= 45:
+        final_activity = 'Moderate'
+        activity_color = 'info'
+        activity_emoji = '🟡'
+    else:
+        final_activity = 'Low'
+        activity_color = 'warning'
+        activity_emoji = '🔴'
+    
+    # Generate trend description
+    if current_avg > hist_avg:
+        trend = f"↑ Up {((current_avg - hist_avg) / hist_avg * 100):.1f}% from average"
+    elif current_avg < hist_avg:
+        trend = f"↓ Down {((hist_avg - current_avg) / hist_avg * 100):.1f}% from average"
+    else:
+        trend = "→ On par with average"
+    
+    # Generate weather-influenced recommendation
+    recommendation = generate_hunting_recommendation(
+        final_activity, 
+        weather_score, 
+        weather_data, 
+        current_avg, 
+        hist_avg
+    )
+    
+    return {
+        'error': None,
+        'activity': final_activity,
+        'activity_color': activity_color,
+        'activity_emoji': activity_emoji,
+        'species': top_species,
+        'historical_avg': hist_avg,
+        'current_avg': current_avg,
+        'trend': trend,
+        'season_week': season_week,
+        'weather_data': weather_data,
+        'weather_score': weather_score,
+        'historical_weather': historical_weather,
+        'historical_weather_avg': historical_weather_avg,
+        'combined_score': combined_score,
+        'harvest_score': harvest_score,
+        'recommendation': recommendation
+    }
+
+def generate_hunting_recommendation(activity, weather_score, weather_data, current_avg, hist_avg):
+    """Generate detailed hunting recommendation based on all factors."""
+    
+    recommendations = []
+    
+    # Base recommendation from activity
+    if activity == 'High':
+        recommendations.append("Excellent hunting conditions expected based on historical harvest data.")
+    elif activity == 'Moderate':
+        recommendations.append("Moderate hunting activity expected.")
+    else:
+        recommendations.append("Lower than average activity expected.")
+    
+    # Weather-based recommendations
+    if weather_score >= 70:
+        recommendations.append("Weather conditions are highly favorable for waterfowl hunting.")
+    elif weather_score >= 50:
+        recommendations.append("Weather conditions are acceptable for hunting.")
+    else:
+        recommendations.append("Weather conditions may be challenging.")
+    
+    # Specific weather factors
+    if weather_data:
+        temp = weather_data.get('temp_mean')
+        wind = weather_data.get('windspeed')
+        wind_dir = weather_data.get('wind_direction_cardinal', '')
+        precip = weather_data.get('precipitation', 0)
+        
+        if temp and temp < 40:
+            recommendations.append("Cold temperatures may increase duck activity.")
+        
+        if wind and 5 <= wind <= 15:
+            recommendations.append("Wind conditions are ideal for decoy movement.")
+        elif wind and wind > 20:
+            recommendations.append("High winds may make hunting challenging.")
+        
+        if 'N' in wind_dir:
+            recommendations.append("North winds are favorable for duck migration.")
+        
+        if precip and precip > 0.3:
+            recommendations.append("Heavy precipitation expected - prepare accordingly.")
+    
+    return " ".join(recommendations)
+
+# ----------------------------
+# STEP 5: Display Weather Card Component
+# Add this function to create a weather display card
+# ----------------------------
+
+def display_weather_card(weather_data, weather_score, historical_avg=None):
+    """Display comprehensive weather information in a styled card."""
+    
+    if not weather_data:
+        st.warning("⚠️ Weather data unavailable for this date and location.")
+        return
+    
+    # Weather score color coding
+    if weather_score >= 70:
+        score_color = "#28a745"  # Green
+        score_label = "Excellent"
+    elif weather_score >= 50:
+        score_color = "#ffc107"  # Yellow
+        score_label = "Good"
+    else:
+        score_color = "#dc3545"  # Red
+        score_label = "Fair"
+    
+    # Create weather card HTML
+    weather_html = f"""
+    <div style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        padding: 24px;
+        color: white;
+        margin: 20px 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    ">
+        <h3 style="margin: 0 0 16px 0; color: white;">🌤️ Weather Conditions</h3>
+        
+        <!-- Weather Score -->
+        <div style="
+            text-align: center;
+            background: rgba(255,255,255,0.15);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        ">
+            <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Hunting Weather Score</div>
+            <div style="
+                font-size: 48px;
+                font-weight: bold;
+                color: {score_color};
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            ">{weather_score}/100</div>
+            <div style="font-size: 16px; font-weight: 600; margin-top: 4px;">{score_label} Conditions</div>
+        </div>
+        
+        <!-- Weather Details Grid -->
+        <div style="
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+        ">
+            <!-- Temperature -->
+            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 12px; opacity: 0.8; margin-bottom: 4px;">🌡️ Temperature</div>
+                <div style="font-size: 20px; font-weight: 600;">
+                    {weather_data.get('temp_mean', 'N/A'):.1f}°F
+                </div>
+                <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">
+                    H: {weather_data.get('temp_max', 'N/A'):.0f}°F | 
+                    L: {weather_data.get('temp_min', 'N/A'):.0f}°F
+                </div>
+            </div>
+            
+            <!-- Wind -->
+            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 12px; opacity: 0.8; margin-bottom: 4px;">💨 Wind</div>
+                <div style="font-size: 20px; font-weight: 600;">
+                    {weather_data.get('windspeed', 'N/A'):.1f} mph
+                </div>
+                <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">
+                    Direction: {weather_data.get('wind_direction_cardinal', 'N/A')}
+                </div>
+            </div>
+            
+            <!-- Precipitation -->
+            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 12px; opacity: 0.8; margin-bottom: 4px;">🌧️ Precipitation</div>
+                <div style="font-size: 20px; font-weight: 600;">
+                    {weather_data.get('precipitation', 0):.2f}"
+                </div>
+                <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">
+                    Expected rainfall
+                </div>
+            </div>
+            
+            <!-- Sun Times -->
+            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 12px; opacity: 0.8; margin-bottom: 4px;">☀️ Daylight</div>
+                <div style="font-size: 14px; font-weight: 600;">
+                    ↑ {weather_data.get('sunrise_time', 'N/A')}
+                </div>
+                <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">
+                    ↓ {weather_data.get('sunset_time', 'N/A')}
+                </div>
+            </div>
+        </div>
+    """
+    
+    # Add historical comparison if available
+    if historical_avg:
+        comparison_html = f"""
+        <div style="
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+        ">
+            <div style="font-size: 12px; opacity: 0.8; margin-bottom: 8px;">📊 5-Year Historical Average (Same Date)</div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 11px;">
+                <div>
+                    <strong>Temp:</strong> {historical_avg.get('avg_temp_mean', 'N/A')}°F
+                </div>
+                <div>
+                    <strong>Wind:</strong> {historical_avg.get('avg_windspeed', 'N/A')} mph
+                </div>
+                <div>
+                    <strong>Precip:</strong> {historical_avg.get('avg_precipitation', 'N/A')}"
+                </div>
+            </div>
+        </div>
+        """
+        weather_html += comparison_html
+    
+    weather_html += "</div>"
+    
+    st.markdown(weather_html, unsafe_allow_html=True)
+
+# ----------------------------
+# STEP 6: Update Your Main Content Section
+# Replace the prediction display section in your main content with this enhanced version
+# ----------------------------
+
+"""
+REPLACE THIS SECTION IN YOUR MAIN CONTENT:
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown('<a id="forecast"></a>', unsafe_allow_html=True)
+    st.subheader("Activity Forecast")
+
+    prediction = predict_activity(date, location, historical, master_data)
+    
+    # ... rest of the display code
+
+WITH THE CODE BELOW:
+"""
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown('<a id="forecast"></a>', unsafe_allow_html=True)
+    st.subheader("🎯 Activity Forecast")
+
+    # Use enhanced prediction function
+    prediction = predict_activity_with_weather(date, location, historical, master_data, coordinates)
+
+    if prediction.get('error'):
+        err = prediction['error']
+        if err and 'no historical data' in err.lower():
+            display_no_historical_data(err)
+        else:
+            st.warning(err)
+    else:
+        activity = prediction['activity']
+        activity_emoji = prediction['activity_emoji']
+        activity_color = prediction['activity_color']
+        species = prediction['species']
+        combined_score = prediction['combined_score']
+
+        # Display main prediction with emoji
+        prediction_html = f"""
+        <div style="
+            background: linear-gradient(135deg, #1B3022 0%, #2d4a35 100%);
+            border-radius: 12px;
+            padding: 24px;
+            color: white;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        ">
+            <h2 style="margin: 0; color: white;">
+                {activity_emoji} {location} - {activity} Activity Expected
+            </h2>
+            <div style="font-size: 18px; margin-top: 12px; opacity: 0.95;">
+                Overall Hunting Score: <strong style="font-size: 24px;">{combined_score:.0f}/100</strong>
+            </div>
+        </div>
+        """
+        st.markdown(prediction_html, unsafe_allow_html=True)
+
+        # Display recommendation
+        st.info(f"📋 **Recommendation:** {prediction['recommendation']}")
+
+        # Summary text
+        summary = f"""
+        {location} is predicted to have **{activity}** activity this week, primarily consisting of **{species}**.
+        This forecast combines 15 years of harvest data with current weather conditions.
+        """
+        st.markdown(summary)
+
+        # Metrics Row - Harvest Data
+        st.markdown("### 📊 Harvest Data Analysis")
+        metric_col1, metric_col2, metric_col3 = st.columns(3)
+        
+        with metric_col1:
+            st.metric(
+                label="Historical Avg Ducks",
+                value=f"{prediction['historical_avg']:.2f}",
+                help="15-year average for this location and week"
+            )
+        
+        with metric_col2:
+            curr_delta = prediction['current_avg'] - prediction['historical_avg']
+            st.metric(
+                label="Current Year Avg",
+                value=f"{prediction['current_avg']:.2f}",
+                delta=f"{curr_delta:.2f}",
+                help="Current season average compared to historical"
+            )
+        
+        with metric_col3:
+            st.metric(
+                label="Harvest Score",
+                value=f"{prediction['harvest_score']:.0f}/100",
+                help="Score based on harvest data analysis"
+            )
+
+        st.markdown(f"**Trend:** {prediction['trend']}")
+        
+        # Weather Card
+        st.markdown("### 🌤️ Weather Analysis")
+        display_weather_card(
+            prediction['weather_data'],
+            prediction['weather_score'],
+            prediction['historical_weather_avg']
+        )
+
+with col2:
+    st.subheader("📍 Hunt Details")
+    st.markdown(f"**Date:** {date.strftime('%B %d, %Y')}")
+    st.markdown(f"**Location:** {location}")
+    st.markdown(f"**Season Week:** {prediction.get('season_week', 'N/A')}")
+    st.markdown(f"**Top Species:** {prediction.get('species', 'N/A')}")
+    
+    # Add weather summary in sidebar
+    if prediction.get('weather_data'):
+        weather = prediction['weather_data']
+        st.markdown("---")
+        st.markdown("**🌡️ Quick Weather:**")
+        st.markdown(f"• Temp: {weather.get('temp_mean', 'N/A'):.0f}°F")
+        st.markdown(f"• Wind: {weather.get('windspeed', 'N/A'):.0f} mph {weather.get('wind_direction_cardinal', '')}")
+        st.markdown(f"• Sunrise: {weather.get('sunrise_time', 'N/A')}")
+        st.markdown(f"• Sunset: {weather.get('sunset_time', 'N/A')}")
+
+# ----------------------------
+# STEP 7: Add Weather Indicators to Map (Optional Enhancement)
+# Update your map markers to include weather score
+# ----------------------------
+
+# In your map creation section, update the popup to include weather info:
+"""
+REPLACE YOUR MAP MARKER CREATION WITH THIS ENHANCED VERSION:
+"""
+
+for _, row in week_data.iterrows():
+    area = row['Area Name']
+    if area in coords_dict:
+        lat, lon = coords_dict[area]
+        avg_ducks = row['15yr_Avg_Ducks']
+
+        # Get weather score for this location
+        area_weather = fetch_comprehensive_weather(lat, lon, date)
+        weather_score = calculate_weather_score(area_weather) if area_weather else 50.0
+
+        # Color based on combined score (avg ducks + weather)
+        combined_map_score = (avg_ducks * 10) + (weather_score * 0.5)  # Weighted combination
+        
+        if combined_map_score >= 60:
+            color = 'darkgreen'
+        elif combined_map_score >= 40:
+            color = 'green'
+        elif combined_map_score >= 20:
+            color = 'orange'
+        else:
+            color = 'red'
+
+        # Highlight selected location
+        if area.upper() == location.upper():
+            color = 'blue'
+
+        # Enhanced popup with weather info
+        popup_text = f"""
+        <div style="font-family: Arial, sans-serif; min-width: 200px;">
+            <b style="font-size: 14px;">{area}</b><br>
+            <hr style="margin: 8px 0;">
+            <b>📊 Harvest Data:</b><br>
+            Avg Ducks: {avg_ducks:.2f}<br>
+            <br>
+            <b>🌤️ Weather Score:</b><br>
+            {weather_score:.0f}/100
+        """
+        
+        if area_weather:
+            popup_text += f"""<br>
+            Temp: {area_weather.get('temp_mean', 'N/A'):.0f}°F<br>
+            Wind: {area_weather.get('windspeed', 'N/A'):.0f} mph
+            """
+        
+        popup_text += "</div>"
+
+        folium.Marker(
+            location=[lat, lon],
+            popup=folium.Popup(popup_text, max_width=300),
+            tooltip=f"{area} - Score: {weather_score:.0f}",
+            icon=folium.Icon(color=color, prefix='fa', icon='duck')
+        ).add_to(m)
+
+# ----------------------------
+# INSTRUCTIONS FOR IMPLEMENTATION
+# ----------------------------
+
+"""
+TO INTEGRATE THIS INTO YOUR APP.PY:
+
+1. Add the imports at the top of your file
+
+2. Replace your existing fetch_weather_for_date function with fetch_comprehensive_weather
+
+3. Add all the helper functions (degrees_to_cardinal, calculate_weather_score, etc.)
+
+4. Replace your predict_activity function with predict_activity_with_weather
+
+5. Add the display_weather_card function
+
+6. Replace your main content prediction display section with the enhanced version
+
+7. Update your map markers to include weather information
+
+8. Test the app with: streamlit run app.py
+
+The weather data will now be seamlessly integrated into your hunting predictions!
+"""

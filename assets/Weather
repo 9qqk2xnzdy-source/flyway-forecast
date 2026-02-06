@@ -1,0 +1,663 @@
+// Enhanced Hunting Weather Analysis
+// Scrapes Weather Underground historical data for each check-in station
+// Analyzes: Temp High, Temp Low, Wind Speed, Wind Direction, Average Conditions
+
+class HuntingWeatherAnalyzer {
+  constructor() {
+    this.historicalYears = 15;
+    // Check-in stations with their nearest weather station codes
+    this.checkInStations = {
+      'Colusa': { city: 'Colusa', state: 'CA', airportCode: 'KCIC' },
+      'Los Banos': { city: 'Los Banos', state: 'CA', airportCode: 'KLSN' },
+      'Woodland': { city: 'Woodland', state: 'CA', airportCode: 'KDWA' },
+      // Add more check-in stations as needed
+    };
+  }
+
+  /**
+   * Main analysis function - gets historical weather for a check-in station
+   * @param {string} stationName - Name of check-in station
+   * @param {string} targetDate - Date in YYYY-MM-DD format
+   * @returns {Object} Complete weather analysis with hunting probability
+   */
+  async analyzeStation(stationName, targetDate) {
+    try {
+      const station = this.checkInStations[stationName];
+      if (!station) {
+        throw new Error(`Unknown check-in station: ${stationName}`);
+      }
+
+      console.log(`Analyzing ${stationName} for ${targetDate}...`);
+
+      // Parse the target date
+      const date = new Date(targetDate);
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const year = date.getFullYear();
+
+      // Fetch historical data for this date over past 15 years
+      const historicalData = await this.fetchHistoricalData(
+        station,
+        month,
+        day,
+        year
+      );
+
+      // Get current forecast for target date (if available via free API)
+      const currentForecast = await this.getForecast(station, targetDate);
+
+      // Calculate hunting probability
+      const analysis = this.calculateHuntingProbability(
+        historicalData,
+        currentForecast
+      );
+
+      return {
+        success: true,
+        station: stationName,
+        location: `${station.city}, ${station.state}`,
+        targetDate: targetDate,
+        historicalData: historicalData,
+        historicalAverages: analysis.averages,
+        currentForecast: currentForecast,
+        huntingProbability: analysis.probability,
+        factors: analysis.factors,
+        recommendation: analysis.recommendation,
+      };
+    } catch (error) {
+      console.error('Analysis error:', error);
+      return {
+        success: false,
+        error: error.message,
+        station: stationName,
+        targetDate: targetDate,
+      };
+    }
+  }
+
+  /**
+   * Fetch historical weather data using Weather Underground web scraping
+   * Alternative: Use NOAA API (free) or OpenMeteo (free)
+   */
+  async fetchHistoricalData(station, month, day, currentYear) {
+    const historicalData = [];
+    const startYear = currentYear - this.historicalYears;
+
+    // Try multiple methods to get historical data
+    for (let year = startYear; year < currentYear; year++) {
+      try {
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        
+        // METHOD 1: Try Weather Underground scraping
+        let weatherData = await this.scrapeWeatherUnderground(station, year, month, day);
+        
+        // METHOD 2: Fallback to Open-Meteo (free API)
+        if (!weatherData) {
+          weatherData = await this.fetchOpenMeteo(station, dateStr);
+        }
+
+        if (weatherData) {
+          historicalData.push({
+            year: year,
+            date: dateStr,
+            tempHigh: weatherData.tempHigh,
+            tempLow: weatherData.tempLow,
+            tempAvg: (weatherData.tempHigh + weatherData.tempLow) / 2,
+            windSpeed: weatherData.windSpeed,
+            windGust: weatherData.windGust || weatherData.windSpeed,
+            windDirection: weatherData.windDirection,
+            precipitation: weatherData.precipitation || 0,
+            conditions: weatherData.conditions || 'Unknown',
+          });
+        }
+
+        // Rate limiting
+        await this.sleep(200);
+      } catch (error) {
+        console.warn(`Error fetching data for ${year}-${month}-${day}:`, error.message);
+      }
+    }
+
+    return historicalData;
+  }
+
+  /**
+   * Scrape Weather Underground historical page
+   * URL format: https://www.wunderground.com/history/daily/AIRPORTCODE/date/YYYY-M-D
+   */
+  async scrapeWeatherUnderground(station, year, month, day) {
+    try {
+      // Build Weather Underground URL
+      const url = `https://www.wunderground.com/history/daily/${station.airportCode}/date/${year}-${month}-${day}`;
+      
+      console.log(`Attempting to fetch: ${url}`);
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        console.warn(`Failed to fetch WU data: ${response.status}`);
+        return null;
+      }
+
+      const html = await response.text();
+
+      // Parse the HTML to extract weather data
+      // Note: Weather Underground's HTML structure may change, so this is fragile
+      const weatherData = this.parseWeatherUndergroundHTML(html);
+      
+      return weatherData;
+    } catch (error) {
+      console.warn(`WU scraping failed:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Parse Weather Underground HTML to extract weather data
+   */
+  parseWeatherUndergroundHTML(html) {
+    // This is a simplified parser - Weather Underground's actual HTML is complex
+    // You may need to use a DOM parser or regex to extract specific values
+    
+    try {
+      // Look for high temperature
+      const tempHighMatch = html.match(/High[^\d]*(\d+)°F/i) || html.match(/max-temp[^\d]*(\d+)/i);
+      const tempLowMatch = html.match(/Low[^\d]*(\d+)°F/i) || html.match(/min-temp[^\d]*(\d+)/i);
+      const windMatch = html.match(/Wind[^\d]*(\d+)\s*mph/i) || html.match(/wind-speed[^\d]*(\d+)/i);
+      const windDirMatch = html.match(/Wind Direction[^\w]*(\w+)/i) || html.match(/(N|NE|E|SE|S|SW|W|NW|NNE|ENE|ESE|SSE|SSW|WSW|WNW|NNW)/);
+      const precipMatch = html.match(/Precip[^\d]*([\d.]+)/i);
+
+      if (!tempHighMatch || !tempLowMatch) {
+        return null; // Insufficient data
+      }
+
+      return {
+        tempHigh: parseFloat(tempHighMatch[1]),
+        tempLow: parseFloat(tempLowMatch[1]),
+        windSpeed: windMatch ? parseFloat(windMatch[1]) : 0,
+        windGust: windMatch ? parseFloat(windMatch[1]) * 1.3 : 0, // Estimate gust
+        windDirection: windDirMatch ? windDirMatch[1] : 'Unknown',
+        precipitation: precipMatch ? parseFloat(precipMatch[1]) : 0,
+        conditions: 'Historical',
+      };
+    } catch (error) {
+      console.warn('HTML parsing error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch historical data from Open-Meteo (free, no API key required)
+   * Documentation: https://open-meteo.com/en/docs/historical-weather-api
+   */
+  async fetchOpenMeteo(station, dateStr) {
+    try {
+      // You'll need to get lat/lon for your stations
+      // For now, using approximate coordinates
+      const coords = this.getStationCoordinates(station);
+      
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${coords.lat}&longitude=${coords.lon}&start_date=${dateStr}&end_date=${dateStr}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_direction_10m_dominant&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles`;
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.daily && data.daily.time && data.daily.time.length > 0) {
+        return {
+          tempHigh: data.daily.temperature_2m_max[0],
+          tempLow: data.daily.temperature_2m_min[0],
+          windSpeed: data.daily.wind_speed_10m_max[0],
+          windGust: data.daily.wind_speed_10m_max[0] * 1.3,
+          windDirection: this.degreesToDirection(data.daily.wind_direction_10m_dominant[0]),
+          precipitation: data.daily.precipitation_sum[0],
+          conditions: 'Historical',
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('Open-Meteo fetch failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get approximate coordinates for check-in stations
+   */
+  getStationCoordinates(station) {
+    const coords = {
+      'Colusa': { lat: 39.2141, lon: -122.0094 },
+      'Los Banos': { lat: 37.0580, lon: -120.8499 },
+      'Woodland': { lat: 38.6785, lon: -121.7733 },
+    };
+
+    return coords[station.city] || { lat: 38.5, lon: -121.5 }; // Default to Sacramento area
+  }
+
+  /**
+   * Get current forecast using Open-Meteo (free)
+   */
+  async getForecast(station, dateStr) {
+    try {
+      const coords = this.getStationCoordinates(station);
+      
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_direction_10m_dominant&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles&start_date=${dateStr}&end_date=${dateStr}`;
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Forecast unavailable');
+      }
+
+      const data = await response.json();
+
+      if (data.daily && data.daily.time && data.daily.time.length > 0) {
+        return {
+          tempHigh: data.daily.temperature_2m_max[0],
+          tempLow: data.daily.temperature_2m_min[0],
+          tempAvg: (data.daily.temperature_2m_max[0] + data.daily.temperature_2m_min[0]) / 2,
+          windSpeed: data.daily.wind_speed_10m_max[0],
+          windGust: data.daily.wind_speed_10m_max[0] * 1.3,
+          windDirection: this.degreesToDirection(data.daily.wind_direction_10m_dominant[0]),
+          precipitation: data.daily.precipitation_sum[0],
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('Forecast fetch failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Convert wind degrees to direction
+   */
+  degreesToDirection(degrees) {
+    const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    const index = Math.round(degrees / 22.5) % 16;
+    return directions[index];
+  }
+
+  /**
+   * Calculate hunting probability based on weather analysis
+   */
+  calculateHuntingProbability(historicalData, currentForecast) {
+    if (historicalData.length === 0) {
+      return {
+        probability: 50,
+        factors: {},
+        recommendation: 'Insufficient historical data',
+        averages: {},
+      };
+    }
+
+    // Calculate historical averages
+    const averages = {
+      tempHigh: this.average(historicalData.map(d => d.tempHigh)),
+      tempLow: this.average(historicalData.map(d => d.tempLow)),
+      tempAvg: this.average(historicalData.map(d => d.tempAvg)),
+      windSpeed: this.average(historicalData.map(d => d.windSpeed)),
+      windGust: this.average(historicalData.map(d => d.windGust)),
+      precipitation: this.average(historicalData.map(d => d.precipitation)),
+    };
+
+    // If no current forecast, use historical averages
+    const forecast = currentForecast || {
+      tempHigh: averages.tempHigh,
+      tempLow: averages.tempLow,
+      windSpeed: averages.windSpeed,
+      windDirection: 'Variable',
+    };
+
+    // Score individual factors
+    const scores = {
+      temperature: this.scoreTemperature(forecast.tempHigh, forecast.tempLow, averages.tempAvg),
+      wind: this.scoreWind(forecast.windSpeed, forecast.windDirection),
+      consistency: this.scoreConsistency(forecast, averages),
+      precipitation: this.scorePrecipitation(forecast.precipitation || 0),
+      coldFront: this.scoreColdFront(forecast, averages),
+    };
+
+    // Weighted score
+    const weights = {
+      temperature: 0.3,
+      wind: 0.25,
+      consistency: 0.15,
+      precipitation: 0.15,
+      coldFront: 0.15,
+    };
+
+    let totalScore = 0;
+    for (const [factor, score] of Object.entries(scores)) {
+      totalScore += score * weights[factor];
+    }
+
+    const probability = Math.round(totalScore);
+    const recommendation = this.generateRecommendation(probability, scores, forecast, averages);
+
+    return {
+      probability,
+      factors: scores,
+      recommendation,
+      averages,
+    };
+  }
+
+  /**
+   * Score temperature conditions
+   */
+  scoreTemperature(tempHigh, tempLow, historicalAvg) {
+    const avgTemp = (tempHigh + tempLow) / 2;
+    
+    // Ideal waterfowl hunting: 30-50°F
+    let score = 50;
+    
+    if (avgTemp >= 30 && avgTemp <= 50) {
+      score = 95;
+    } else if (avgTemp < 30) {
+      score = 75; // Cold but ok
+    } else if (avgTemp > 50 && avgTemp <= 60) {
+      score = 65;
+    } else if (avgTemp > 60 && avgTemp <= 70) {
+      score = 45;
+    } else {
+      score = 30; // Too warm
+    }
+
+    // Bonus for cooler than average (migration indicator)
+    if (avgTemp < historicalAvg - 5) {
+      score = Math.min(100, score + 15);
+    }
+
+    return score;
+  }
+
+  /**
+   * Score wind conditions
+   */
+  scoreWind(windSpeed, windDirection) {
+    let score = 50;
+
+    // Ideal wind: 5-15 mph
+    if (windSpeed >= 5 && windSpeed <= 15) {
+      score = 90;
+    } else if (windSpeed < 5) {
+      score = 60; // Too calm
+    } else if (windSpeed > 15 && windSpeed <= 20) {
+      score = 70;
+    } else if (windSpeed > 20 && windSpeed <= 25) {
+      score = 50;
+    } else {
+      score = 30; // Too windy
+    }
+
+    // Bonus for north winds (migration indicator)
+    if (windDirection && (windDirection.includes('N') || windDirection.includes('NE') || windDirection.includes('NW'))) {
+      score = Math.min(100, score + 10);
+    }
+
+    return score;
+  }
+
+  /**
+   * Score consistency with historical patterns
+   */
+  scoreConsistency(forecast, averages) {
+    let score = 50;
+
+    const tempDiff = Math.abs(forecast.tempAvg - averages.tempAvg);
+    if (tempDiff < 5) score += 20;
+    else if (tempDiff < 10) score += 15;
+    else if (tempDiff < 15) score += 10;
+
+    const windDiff = Math.abs(forecast.windSpeed - averages.windSpeed);
+    if (windDiff < 3) score += 15;
+    else if (windDiff < 7) score += 10;
+
+    return Math.min(100, score);
+  }
+
+  /**
+   * Score precipitation
+   */
+  scorePrecipitation(precip) {
+    if (precip === 0) return 85;
+    if (precip <= 0.1) return 80;
+    if (precip <= 0.3) return 60;
+    return 35;
+  }
+
+  /**
+   * Score cold front probability (comparing to historical)
+   */
+  scoreColdFront(forecast, averages) {
+    const tempDrop = averages.tempAvg - forecast.tempAvg;
+    
+    if (tempDrop >= 10) return 95; // Significant cold front
+    if (tempDrop >= 5) return 85;
+    if (tempDrop >= 0) return 70;
+    return 50; // Warming trend
+  }
+
+  /**
+   * Generate recommendation text
+   */
+  generateRecommendation(probability, scores, forecast, averages) {
+    let rec = '';
+
+    if (probability >= 80) {
+      rec = 'Excellent hunting conditions! ';
+    } else if (probability >= 65) {
+      rec = 'Good hunting likely. ';
+    } else if (probability >= 50) {
+      rec = 'Fair conditions. ';
+    } else {
+      rec = 'Challenging conditions. ';
+    }
+
+    // Add specific factors
+    if (forecast.tempAvg < averages.tempAvg - 5) {
+      rec += 'Cold front moving through. ';
+    }
+
+    if (scores.wind > 80) {
+      rec += 'Good wind conditions. ';
+    } else if (scores.wind < 50) {
+      rec += 'Wind may be an issue. ';
+    }
+
+    return rec.trim();
+  }
+
+  /**
+   * Helper: calculate average
+   */
+  average(arr) {
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
+
+  /**
+   * Helper: sleep function
+   */
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+// ============================================
+// Enhanced Display Function
+// ============================================
+
+function createHuntingWeatherDisplay(result) {
+  if (!result.success) {
+    return `
+      <div class="error-box">
+        <h3>❌ Analysis Failed</h3>
+        <p>${result.error}</p>
+      </div>
+    `;
+  }
+
+  const { probability, historicalData, historicalAverages, currentForecast, factors, recommendation } = result;
+
+  // Color coding
+  let color = '#dc3545';
+  if (probability >= 80) color = '#28a745';
+  else if (probability >= 65) color = '#20c997';
+  else if (probability >= 50) color = '#ffc107';
+
+  return `
+    <div style="
+      background: linear-gradient(135deg, #2c5364 0%, #203a43 50%, #0f2027 100%);
+      border-radius: 20px;
+      padding: 30px;
+      color: white;
+      margin: 20px 0;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+    ">
+      <h2 style="text-align: center; margin-bottom: 30px;">
+        🦆 ${result.station} - Hunting Forecast
+      </h2>
+
+      <!-- Probability -->
+      <div style="text-align: center; margin: 30px 0;">
+        <div style="
+          display: inline-block;
+          width: 200px;
+          height: 200px;
+          border-radius: 50%;
+          background: ${color};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        ">
+          <div style="font-size: 60px; font-weight: bold;">${probability}%</div>
+          <div style="font-size: 16px; text-transform: uppercase;">Hunt Success</div>
+        </div>
+      </div>
+
+      <!-- Recommendation -->
+      <div style="
+        background: rgba(255,255,255,0.15);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 25px 0;
+        border-left: 5px solid ${color};
+      ">
+        <h3 style="margin: 0 0 10px 0;">📋 Recommendation</h3>
+        <p style="font-size: 18px; margin: 0;">${recommendation}</p>
+      </div>
+
+      <!-- Current Forecast -->
+      ${currentForecast ? `
+      <div style="
+        background: rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 20px 0;
+      ">
+        <h3 style="margin-top: 0;">🌡️ Forecast for ${result.targetDate}</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+          <div>
+            <strong>High:</strong><br/>
+            ${Math.round(currentForecast.tempHigh)}°F
+          </div>
+          <div>
+            <strong>Low:</strong><br/>
+            ${Math.round(currentForecast.tempLow)}°F
+          </div>
+          <div>
+            <strong>Wind:</strong><br/>
+            ${Math.round(currentForecast.windSpeed)} mph
+          </div>
+          <div>
+            <strong>Direction:</strong><br/>
+            ${currentForecast.windDirection}
+          </div>
+          ${currentForecast.precipitation !== undefined ? `
+          <div>
+            <strong>Precip:</strong><br/>
+            ${currentForecast.precipitation.toFixed(2)}"
+          </div>
+          ` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      <!-- Historical Averages -->
+      <div style="
+        background: rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 20px 0;
+      ">
+        <h3 style="margin-top: 0;">📊 15-Year Historical Average</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+          <div>
+            <strong>Avg High:</strong><br/>
+            ${Math.round(historicalAverages.tempHigh)}°F
+          </div>
+          <div>
+            <strong>Avg Low:</strong><br/>
+            ${Math.round(historicalAverages.tempLow)}°F
+          </div>
+          <div>
+            <strong>Avg Wind:</strong><br/>
+            ${Math.round(historicalAverages.windSpeed)} mph
+          </div>
+          <div>
+            <strong>Wind Gusts:</strong><br/>
+            ${Math.round(historicalAverages.windGust)} mph
+          </div>
+        </div>
+      </div>
+
+      <!-- Factor Breakdown -->
+      <div style="
+        background: rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 20px 0;
+      ">
+        <h3 style="margin-top: 0;">📈 Factor Analysis</h3>
+        ${Object.entries(factors).map(([factor, score]) => `
+          <div style="margin: 15px 0;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+              <span style="text-transform: capitalize;">${factor.replace(/([A-Z])/g, ' $1')}</span>
+              <span><strong>${Math.round(score)}/100</strong></span>
+            </div>
+            <div style="
+              background: rgba(0,0,0,0.3);
+              border-radius: 10px;
+              height: 22px;
+              overflow: hidden;
+            ">
+              <div style="
+                background: linear-gradient(90deg, #ff6b6b, #4ecdc4);
+                width: ${score}%;
+                height: 100%;
+                border-radius: 10px;
+              "></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div style="text-align: center; margin-top: 25px; font-size: 13px; opacity: 0.7;">
+        Based on ${historicalData.length} years of data | ${result.location}
+      </div>
+    </div>
+  `;
+}
+
+// Export
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { HuntingWeatherAnalyzer, createHuntingWeatherDisplay };
+}

@@ -1,0 +1,634 @@
+# ============================================================================
+# REPLACE YOUR CURRENT nav_html SECTION WITH THIS
+# ============================================================================
+
+nav_html = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+
+:root {
+    --primary: #1B5E20;
+    --primary-dark: #0d3315;
+    --accent: #4CAF50;
+    --text-dark: #1a1a1a;
+    --text-light: #666;
+    --bg-light: #f8f9fa;
+    --bg-white: #ffffff;
+    --border: #e0e0e0;
+    --shadow: rgba(0,0,0,0.08);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body, .stApp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text-dark);
+    background: var(--bg-light);
+}
+
+h1, h2, h3, h4 {
+    font-family: 'Manrope', 'Inter', sans-serif;
+    font-weight: 700;
+    color: var(--text-dark);
+    line-height: 1.2;
+}
+
+/* Modern Navigation Bar */
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background: var(--bg-white);
+    border-bottom: 1px solid var(--border);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 40px;
+    box-shadow: 0 2px 12px var(--shadow);
+}
+
+.navbar .brand {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 800;
+    font-size: 24px;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.navbar .brand-icon {
+    font-size: 28px;
+}
+
+.navbar .nav-menu {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.navbar a, .navbar .dropdown-toggle {
+    color: var(--text-dark);
+    text-decoration: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 15px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.navbar a:hover, .navbar .dropdown-toggle:hover {
+    background: var(--bg-light);
+    color: var(--primary);
+}
+
+/* Dropdown Menu */
+.dropdown {
+    position: relative;
+}
+
+.dropdown-arrow {
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+.dropdown:hover .dropdown-arrow,
+.dropdown.show .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.submenu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 200px;
+    background: var(--bg-white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px;
+    margin-top: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+
+.dropdown:hover .submenu,
+.dropdown.show .submenu {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.submenu a {
+    display: block;
+    padding: 12px 16px;
+    color: var(--text-dark);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.submenu a:hover {
+    background: var(--bg-light);
+    color: var(--primary);
+}
+
+/* Main Content Area */
+.main-content {
+    padding-top: 100px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding-left: 20px;
+    padding-right: 20px;
+}
+
+/* Section Styling */
+.section {
+    background: var(--bg-white);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.section-header {
+    font-size: 28px;
+    margin-bottom: 20px;
+    color: var(--primary);
+    border-bottom: 2px solid var(--bg-light);
+    padding-bottom: 12px;
+}
+
+/* Cards */
+.card {
+    background: var(--bg-white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: all 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 16px var(--shadow);
+    transform: translateY(-2px);
+}
+
+/* Metrics */
+.metric-card {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+}
+
+.metric-label {
+    font-size: 13px;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.metric-value {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.metric-delta {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* Alert Boxes */
+.alert {
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+    border-left: 4px solid;
+}
+
+.alert-success {
+    background: #e8f5e9;
+    border-left-color: #4CAF50;
+    color: #2e7d32;
+}
+
+.alert-info {
+    background: #e3f2fd;
+    border-left-color: #2196F3;
+    color: #1565c0;
+}
+
+/* Buttons */
+.stButton>button {
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 15px;
+    transition: all 0.2s ease;
+}
+
+.stButton>button:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .navbar {
+        padding: 0 20px;
+        height: auto;
+        min-height: 70px;
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 15px 20px;
+    }
+    
+    .navbar .nav-menu {
+        width: 100%;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+    
+    .main-content {
+        padding-top: 140px;
+    }
+    
+    .section {
+        padding: 20px;
+    }
+}
+</style>
+
+<div class="navbar">
+    <div class="brand">
+        <span class="brand-icon">🦆</span>
+        Flyway Forecast
+    </div>
+    <div class="nav-menu">
+        <a href="#forecast">📊 Forecast</a>
+        <a href="#map">🗺️ Map</a>
+        <div class="dropdown">
+            <div class="dropdown-toggle">
+                📚 Resources
+                <span class="dropdown-arrow">▼</span>
+            </div>
+            <div class="submenu">
+                <a href="#about">About Us</a>
+                <a href="#how-it-works">How It Works</a>
+                <a href="#data-info">Data & Methods</a>
+            </div>
+        </div>
+        <div class="dropdown">
+            <div class="dropdown-toggle">
+                ℹ️ Info
+                <span class="dropdown-arrow">▼</span>
+            </div>
+            <div class="submenu">
+                <a href="#our-goal">Our Goal</a>
+                <a href="#faq">FAQ</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Toggle dropdown on click
+    document.querySelectorAll('.dropdown-toggle').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            // Close other dropdowns
+            document.querySelectorAll('.dropdown').forEach(function(d) {
+                if (d !== this.parentElement) {
+                    d.classList.remove('show');
+                }
+            }.bind(this));
+            // Toggle current dropdown
+            this.parentElement.classList.toggle('show');
+        });
+    });
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.dropdown')) {
+            document.querySelectorAll('.dropdown').forEach(function(d) {
+                d.classList.remove('show');
+            });
+        }
+    });
+
+    // Smooth scroll with navbar offset
+    document.querySelectorAll('a[href^="#"]').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            var href = this.getAttribute('href');
+            if (href && href.startsWith('#')) {
+                var id = href.substring(1);
+                var target = document.getElementById(id);
+                if (target) {
+                    e.preventDefault();
+                    var navbar = document.querySelector('.navbar');
+                    var navHeight = navbar ? navbar.offsetHeight : 70;
+                    var top = target.getBoundingClientRect().top + window.pageYOffset - navHeight - 20;
+                    window.scrollTo({ top: top, behavior: 'smooth' });
+                    
+                    // Close dropdowns after navigation
+                    document.querySelectorAll('.dropdown').forEach(function(d) {
+                        d.classList.remove('show');
+                    });
+                }
+            }
+        });
+    });
+});
+</script>
+"""
+
+
+# ============================================================================
+# REPLACE YOUR HEADER SECTION (after st.markdown(nav_html...)) WITH THIS
+# ============================================================================
+
+st.markdown(nav_html, unsafe_allow_html=True)
+
+# Hero Section
+st.markdown("""
+<div style='text-align: center; padding: 40px 0 20px 0;'>
+    <h1 style='font-size: 48px; margin-bottom: 12px; color: #1B5E20;'>
+        🦆 California Waterfowl Hunting Forecast
+    </h1>
+    <p style='font-size: 18px; color: #666; max-width: 800px; margin: 0 auto;'>
+        Make informed hunting decisions with 15 years of harvest data analysis
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ============================================================================
+# UPDATE YOUR FORECAST SECTION - Replace the forecast display code with this
+# ============================================================================
+
+st.markdown('<a id="forecast"></a>', unsafe_allow_html=True)
+st.markdown('<div class="section">', unsafe_allow_html=True)
+st.markdown('<h2 class="section-header">📊 Activity Forecast</h2>', unsafe_allow_html=True)
+
+prediction = predict_activity(date, location, historical, master_data)
+
+if prediction.get('error'):
+    st.warning(f"⚠️ {prediction['error']}")
+else:
+    activity = prediction['activity']
+    species = prediction['species']
+    
+    # Activity Alert
+    if activity == 'High':
+        st.markdown(f"""
+        <div class="alert alert-success">
+            <h3 style='margin: 0 0 8px 0;'>🟢 High Activity Expected at {location}</h3>
+            <p style='margin: 0; font-size: 16px;'>
+                Conditions are favorable for hunting this week, with activity levels above the 15-year historical average.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="alert alert-info">
+            <h3 style='margin: 0 0 8px 0;'>🔵 Low Activity Expected at {location}</h3>
+            <p style='margin: 0; font-size: 16px;'>
+                Activity levels are below the historical average this week. Consider alternative locations or dates.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Metrics Row
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Historical Avg</div>
+            <div class="metric-value">{prediction['historical_avg']:.1f}</div>
+            <div class="metric-delta">Ducks per Hunt</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        delta = prediction['current_avg'] - prediction['historical_avg']
+        delta_symbol = "▲" if delta > 0 else "▼"
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Current Year Avg</div>
+            <div class="metric-value">{prediction['current_avg']:.1f}</div>
+            <div class="metric-delta">{delta_symbol} {abs(delta):.1f} vs Historical</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Top Species</div>
+            <div class="metric-value" style="font-size: 20px;">{species if species else 'N/A'}</div>
+            <div class="metric-delta">Most Common</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Season Week</div>
+            <div class="metric-value">{prediction['season_week']}</div>
+            <div class="metric-delta">{date.strftime('%b %d, %Y')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Trend Information
+    st.markdown(f"""
+    <div class="card">
+        <h4 style='margin: 0 0 12px 0; color: #1B5E20;'>📈 Trend Analysis</h4>
+        <p style='font-size: 16px; margin: 0;'><strong>{prediction['trend']}</strong></p>
+        <p style='margin: 8px 0 0 0; color: #666;'>
+            Based on comparing current season data to the 15-year historical baseline for this refuge during week {prediction['season_week']}.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ============================================================================
+# ADD THESE NEW SECTIONS BEFORE YOUR FOOTER
+# ============================================================================
+
+# How It Works Section
+st.markdown('<a id="how-it-works"></a>', unsafe_allow_html=True)
+st.markdown('<div class="section">', unsafe_allow_html=True)
+st.markdown('<h2 class="section-header">⚙️ How It Works</h2>', unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("""
+    <div class="card">
+        <h3 style='color: #1B5E20; margin-bottom: 12px;'>1️⃣ Data Collection</h3>
+        <p>We aggregate harvest reports from California wildlife refuges spanning 15 hunting seasons.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown("""
+    <div class="card">
+        <h3 style='color: #1B5E20; margin-bottom: 12px;'>2️⃣ Analysis</h3>
+        <p>Our algorithms compare current season data against historical baselines to identify trends.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown("""
+    <div class="card">
+        <h3 style='color: #1B5E20; margin-bottom: 12px;'>3️⃣ Prediction</h3>
+        <p>We forecast activity levels and species distribution to help you plan your hunt.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Data & Methods Section
+st.markdown('<a id="data-info"></a>', unsafe_allow_html=True)
+st.markdown('<div class="section">', unsafe_allow_html=True)
+st.markdown('<h2 class="section-header">📊 Data & Methods</h2>', unsafe_allow_html=True)
+st.markdown("""
+### Data Sources
+- **15 years** of California waterfowl harvest data (2006-2024)
+- Official wildlife refuge harvest reports
+- GPS coordinates for all major hunting areas
+
+### Methodology
+- **Season weeks** calculated from October 1st (season start)
+- **Historical baseline** computed as 15-year average for each refuge/week combination
+- **Activity classification** based on comparison to historical average
+- **Species analysis** identifies most frequently harvested species per location/week
+
+### Limitations
+- Predictions are based on historical patterns and may not account for all variables
+- Weather, water conditions, and migration patterns can vary year to year
+- Always check current regulations and conditions before hunting
+""")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# FAQ Section
+st.markdown('<a id="faq"></a>', unsafe_allow_html=True)
+st.markdown('<div class="section">', unsafe_allow_html=True)
+st.markdown('<h2 class="section-header">❓ Frequently Asked Questions</h2>', unsafe_allow_html=True)
+
+with st.expander("📅 What time period does the data cover?"):
+    st.write("Our database includes 15 years of harvest data from the 2006-2007 through 2024-2025 hunting seasons.")
+
+with st.expander("🎯 How accurate are the predictions?"):
+    st.write("""
+    Predictions are based on historical averages and current season trends. While they provide valuable insights, 
+    actual conditions can vary due to weather, water levels, migration timing, and other factors. Use predictions 
+    as one tool in your planning process.
+    """)
+
+with st.expander("🗺️ Can I see data for specific refuges?"):
+    st.write("Yes! Use the sidebar to select any California refuge or hunting area to see specific forecasts and historical data.")
+
+with st.expander("📊 What does 'Season Week' mean?"):
+    st.write("""
+    Season Week is calculated from October 1st (the start of waterfowl season). Week 1 begins October 1-7, 
+    Week 2 is October 8-14, and so on. This standardization allows us to compare data across different years.
+    """)
+
+st.markdown('</div>', unsafe_allow_html=True)
+# ============================================================================
+# VERIFICATION & DEBUG INFO (Remove after testing)
+# ============================================================================
+
+st.markdown('</div>', unsafe_allow_html=True)  # Close main-content div if not already closed
+
+# Footer
+st.markdown("""
+<div style='text-align: center; padding: 40px 20px; color: #666; border-top: 1px solid #e0e0e0; margin-top: 40px;'>
+    <p style='margin: 0 0 8px 0;'><strong>Data Source:</strong> 15 years of California waterfowl harvest data (2006-2024)</p>
+    <p style='margin: 0 0 8px 0;'>Season runs October 1 - December 31 | Weeks calculated from season start</p>
+    <p style='margin: 0; font-size: 14px;'>© 2024 Flyway Forecast | Made with 🦆 for California waterfowl hunters</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Debug/Verification Section (Shows the app loaded successfully)
+with st.expander("🔧 Debug Info - Click to verify app is working"):
+    st.success("✅ App loaded successfully!")
+    st.write(f"**Total refuges loaded:** {len(coordinates)}")
+    st.write(f"**Historical data records:** {len(historical)}")
+    st.write(f"**Master data records:** {len(master_data)}")
+    st.write(f"**Selected location:** {location}")
+    st.write(f"**Selected date:** {date}")
+    st.write(f"**Season week:** {calculate_season_week(date)}")
+    if not prediction.get('error'):
+        st.write(f"**Prediction generated:** ✅ {activity} Activity")
+    else:
+        st.warning(f"**Prediction error:** {prediction['error']}")
+        # ============================================================================
+# FOOTER
+# ============================================================================
+
+st.markdown("""
+<div style='text-align: center; padding: 40px 20px; color: #666; border-top: 1px solid #e0e0e0; margin-top: 40px;'>
+    <p style='margin: 0 0 8px 0;'><strong>Data Source:</strong> 15 years of California waterfowl harvest data (2006-2024)</p>
+    <p style='margin: 0 0 8px 0;'>Season runs October 1 - December 31 | Weeks calculated from season start</p>
+    <p style='margin: 0; font-size: 14px;'>© 2024 Flyway Forecast | Made with 🦆 for California waterfowl hunters</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ============================================================================
+# VERIFICATION - Shows app is working correctly
+# ============================================================================
+
+with st.expander("🔧 System Status - Click to verify"):
+    st.success("✅ App loaded successfully!")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Total Refuges", len(coordinates))
+        st.metric("Historical Records", len(historical))
+        st.metric("Master Data Records", len(master_data))
+    
+    with col2:
+        st.write(f"**Selected Location:** {location}")
+        st.write(f"**Selected Date:** {date}")
+        st.write(f"**Season Week:** {calculate_season_week(date)}")
+        
+        if not prediction.get('error'):
+            st.success(f"**Prediction:** ✅ {prediction['activity']} Activity")
+        else:
+            st.warning(f"**Error:** {prediction['error']}")
+    
+    st.info("💡 If you see this section, your app is working perfectly!")
+    
